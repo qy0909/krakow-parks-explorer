@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Kraków Park Explorer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                            950: '#052e16',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Lock HTML and body dimensions to 100dvh to prevent address bar bounce/scroll */
+        html, body {
+            height: 100%;
+            height: 100dvh;
+            width: 100%;
+            overflow: hidden;
+            position: fixed;
+            top: 0;
+            left: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        .safe-bottom-padding {
+            padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 5px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(156, 163, 175, 0.4);
+            border-radius: 9999px;
+        }
+
+        /* Leaflet popup customization for mobile */
+        .leaflet-popup-content-wrapper {
+            border-radius: 1.25rem;
+            padding: 4px;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1);
+        }
+        .leaflet-popup-content {
+            margin: 12px 14px;
+        }
+
+        /* Map Marker Custom Number Badges */
+        .leaflet-marker-number-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0f172a;
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 11px;
+            border-radius: 9999px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+            border: 2px solid #ffffff;
+            width: 32px;
+            height: 32px;
+            transition: all 0.2s ease;
+        }
+        .leaflet-marker-number-badge.visited {
+            background: #16a34a;
+            border-color: #dcfce7;
+        }
+        .leaflet-marker-number-badge.unvisited {
+            background: #e11d48;
+            border-color: #ffe4e6;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-800 antialiased">
+
+    <!-- APP CONTAINER WITH DYNAMIC VIEWPORT HEIGHT (100dvh) -->
+    <div class="flex flex-col md:flex-row w-full h-[100dvh] relative overflow-hidden">
+
+        <!-- SIDEBAR / LIST PANEL -->
+        <aside id="listPanel" class="w-full md:w-[450px] lg:w-[490px] bg-slate-50 flex flex-col h-full z-20 border-r border-slate-200 shadow-2xl flex-shrink-0 transition-all duration-300">
+            
+            <!-- STICKY HEADER BANNER -->
+            <header class="relative p-4 sm:p-5 text-white flex-shrink-0 overflow-hidden bg-slate-950 shadow-md">
+                <div class="absolute inset-0 z-0 bg-cover bg-center opacity-70 scale-105" style="background-image: url('https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Zakrz%C3%B3wek_Krak%C3%B3w_2023.jpg/1200px-Zakrz%C3%B3wek_Krak%C3%B3w_2023.jpg'); filter: contrast(1.15) brightness(0.85);"></div>
+                <div class="absolute inset-0 z-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-black/30"></div>
+
+                <div class="relative z-10">
+                    <div class="flex items-center justify-between">
+                        <!-- BANNER BRANDING -->
+                        <div class="font-extrabold tracking-tight leading-none uppercase select-none">
+                            <div class="text-white text-xl sm:text-2xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">ODKRYWCA</div>
+                            <div class="text-lime-400 text-xl sm:text-2xl my-0.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">KRAKOWSKICH</div>
+                            <div class="text-white text-xl sm:text-2xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">PARKÓW</div>
+                        </div>
+
+                        <!-- Action Controls -->
+                        <div class="flex items-center space-x-2">
+                            <!-- <button id="addParkBtn" title="Add Custom Park" class="w-10 h-10 bg-brand-500 hover:bg-brand-400 active:scale-95 text-white rounded-2xl shadow-lg flex items-center justify-center border border-white/20 transition">
+                                <i class="fa-solid fa-plus text-base"></i>
+                            </button> -->
+                            <button id="moreMenuBtn" title="More Options" class="w-10 h-10 bg-black/40 hover:bg-black/60 active:scale-95 text-white rounded-2xl backdrop-blur-md flex items-center justify-center border border-white/20 transition">
+                                <i class="fa-solid fa-ellipsis-vertical text-base"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- PROGRESS COMPACT CARD -->
+                    <div class="mt-4 pt-3 border-t border-white/15">
+                        <div class="flex justify-between items-center text-xs font-bold mb-1.5">
+                            <span id="progressText" class="text-slate-100 drop-shadow">0 of 78 Stamps Collected</span>
+                            <span id="progressPercent" class="bg-brand-500/90 backdrop-blur-md px-2.5 py-0.5 rounded-full text-white font-extrabold border border-brand-400/40 shadow-sm">0%</span>
+                        </div>
+                        <div class="w-full bg-black/60 rounded-full h-3 p-0.5 overflow-hidden backdrop-blur-md border border-white/20">
+                            <div id="progressBar" class="bg-gradient-to-r from-lime-400 via-emerald-400 to-teal-300 h-2 rounded-full transition-all duration-500 ease-out" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- SEARCH, SORT & QUICK FILTERS -->
+            <div class="p-3 bg-white border-b border-slate-200/80 space-y-2 flex-shrink-0 shadow-sm">
+                <div class="flex gap-2">
+                    <!-- Search Input -->
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                        <input type="text" id="searchInput" placeholder="Search park by name or #..." 
+                            class="w-full pl-10 pr-9 py-2 bg-slate-100 border border-slate-200 rounded-2xl text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:bg-white transition">
+                        <button id="clearSearchBtn" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1">
+                            <i class="fa-solid fa-circle-xmark text-sm"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Sort Dropdown -->
+                    <select id="sortSelect" class="bg-slate-100 border border-slate-200 text-slate-700 font-semibold rounded-2xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/50">
+                        <option value="num-asc"># (1-78)</option>
+                        <option value="num-desc"># (78-1)</option>
+                        <option value="name-asc">Name (A-Z)</option>
+                    </select>
+                </div>
+
+                <!-- Filter Segmented Control -->
+                <div class="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-2xl text-xs font-bold text-slate-600">
+                    <button data-filter="all" class="filter-btn active py-2 rounded-xl transition bg-white text-brand-800 shadow-sm text-center">
+                        All (<span id="cntAll">78</span>)
+                    </button>
+                    <button data-filter="unvisited" class="filter-btn py-2 rounded-xl transition hover:text-slate-900 text-center">
+                        To Visit (<span id="cntUnvisited">78</span>)
+                    </button>
+                    <button data-filter="visited" class="filter-btn py-2 rounded-xl transition hover:text-slate-900 text-center">
+                        Stamped (<span id="cntVisited">0</span>)
+                    </button>
+                </div>
+            </div>
+
+            <!-- PARK CHECKLIST ITEMS -->
+            <div id="parkList" class="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar pb-24 md:pb-4">
+                <!-- Dynamic Park Cards -->
+            </div>
+        </aside>
+
+        <!-- MAIN MAP VIEW -->
+        <main id="mapPanel" class="flex-1 relative h-full w-full bg-slate-200 hidden md:block">
+            <div id="map" class="h-full w-full"></div>
+
+            <!-- GPS / My Location FAB -->
+            <button id="locateBtn" title="My Current Location" class="absolute top-4 right-4 z-[1000] w-12 h-12 bg-white/95 text-slate-700 hover:text-brand-600 rounded-2xl shadow-xl border border-slate-200 flex items-center justify-center active:scale-95 transition">
+                <i class="fa-solid fa-location-crosshairs text-lg"></i>
+            </button>
+
+            <!-- Floating Map Legend -->
+            <div class="absolute bottom-20 md:bottom-5 right-4 z-[1000] bg-white/95 backdrop-blur-md px-3.5 py-2.5 rounded-2xl shadow-xl border border-slate-200/80 text-xs font-semibold flex flex-col gap-1.5">
+                <div class="flex items-center gap-2">
+                    <span class="w-4 h-4 rounded-full bg-brand-600 border-2 border-white shadow-sm inline-flex items-center justify-center text-[9px] text-white font-bold">#</span>
+                    <span class="text-slate-700">Stamped Park</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-4 h-4 rounded-full bg-rose-600 border-2 border-white shadow-sm inline-flex items-center justify-center text-[9px] text-white font-bold">#</span>
+                    <span class="text-slate-700">To Visit</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- FIXED MOBILE BOTTOM NAVIGATION BAR -->
+        <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-slate-200/90 z-[1500] safe-bottom-padding shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+            <div class="grid grid-cols-2 h-14 max-w-md mx-auto">
+                <button id="tabListBtn" class="flex flex-col items-center justify-center space-y-0.5 text-brand-600 font-bold transition active:scale-95">
+                    <i class="fa-solid fa-list-check text-lg"></i>
+                    <span class="text-[11px]">Park List</span>
+                </button>
+                <button id="tabMapBtn" class="flex flex-col items-center justify-center space-y-0.5 text-slate-400 font-medium hover:text-slate-700 transition active:scale-95">
+                    <i class="fa-solid fa-map-location-dot text-lg"></i>
+                    <span class="text-[11px]">Map View</span>
+                </button>
+            </div>
+        </nav>
+
+    </div>
+
+    <!-- MODAL: ADD CUSTOM PARK -->
+    <div id="addModal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[2500] hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3 border-slate-100">
+                <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <i class="fa-solid fa-tree text-brand-600"></i> Add New Park
+                </h3>
+                <button id="closeModalBtn" class="w-9 h-9 bg-slate-100 text-slate-400 hover:text-slate-700 rounded-full flex items-center justify-center transition">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+            
+            <!-- <form id="addParkForm" class="space-y-3.5 text-sm">
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Park Name *</label>
+                    <input type="text" id="newParkName" required placeholder="e.g. Pocket Park Kraków" 
+                        class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/50">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Latitude (Lat) *</label>
+                        <input type="number" step="any" id="newParkLat" required placeholder="50.061" 
+                            class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/50">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Longitude (Lng) *</label>
+                        <input type="number" step="any" id="newParkLng" required placeholder="19.936" 
+                            class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/50">
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                    <button type="button" id="cancelModalBtn" class="px-5 py-2.5 rounded-2xl text-slate-600 bg-slate-100 font-semibold hover:bg-slate-200 transition">Cancel</button>
+                    <button type="submit" class="px-5 py-2.5 rounded-2xl text-white bg-brand-600 hover:bg-brand-700 font-bold shadow-md transition">Save Park</button>
+                </div>
+            </form> -->
+        </div>
+    </div>
+
+    <!-- MODAL: MORE OPTIONS (Backup & Storage Info) -->
+    <div id="moreMenuModal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[2500] hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 space-y-3 text-sm">
+            <h3 class="font-bold text-slate-900 border-b pb-2 text-center text-base">Settings & Storage</h3>
+            
+            <div class="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1.5">
+                <div class="flex items-center gap-1.5 font-bold text-slate-700">
+                    <i class="fa-solid fa-tree text-brand-600"></i> Odkrywca Krakowskich Parków Tracker
+                </div>
+                <p class="text-slate-500 leading-snug">
+                    Designed for personal progress tracking in the <a href="https://zzm.krakow.pl/pl/rekreacja/odkrywca-krakowskich-parkow" target="_blank" rel="noopener noreferrer" class="text-brand-600 underline font-medium hover:text-brand-700">Odkrywca Krakowskich Parków</a> program.
+                </p>
+                <p class="text-slate-500 leading-snug">
+                    Based on the official park locations list from <a href="https://maps.app.goo.gl/fWAvfSPj5H6DfnHa7" target="_blank" rel="noopener noreferrer" class="text-brand-600 underline font-medium hover:text-brand-700">Google Maps List</a>. For personal, non-commercial use only.
+                </p>
+            </div>
+
+            <button id="exportBtn" class="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-2xl transition flex items-center justify-between">
+                <span>Export Backup (JSON)</span>
+                <i class="fa-solid fa-download"></i>
+            </button>
+
+            <label class="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-2xl transition flex items-center justify-between cursor-pointer">
+                <span>Import Backup (JSON)</span>
+                <i class="fa-solid fa-upload"></i>
+                <input type="file" id="importFileInput" accept=".json" class="hidden">
+            </label>
+
+            <button id="triggerResetBtn" class="w-full py-3 px-4 bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold rounded-2xl transition flex items-center justify-between">
+                <span>Reset All Stamps</span>
+                <i class="fa-solid fa-rotate-left"></i>
+            </button>
+
+            <button id="closeMoreMenuBtn" class="w-full py-2.5 text-center text-slate-400 font-medium hover:text-slate-600 transition pt-1">
+                Close
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: CONFIRM RESET -->
+    <div id="confirmModal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[3000] hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 space-y-4 text-center">
+            <div class="w-14 h-14 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto text-2xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-900">Reset all stamps?</h3>
+            <p class="text-xs text-slate-500">This will uncheck all visited parks from LocalStorage and Cookies. This action cannot be undone.</p>
+            <div class="flex justify-center space-x-3 pt-2">
+                <button id="cancelResetBtn" class="px-5 py-2.5 rounded-2xl text-slate-600 bg-slate-100 font-semibold hover:bg-slate-200 transition text-sm">Cancel</button>
+                <button id="confirmResetBtn" class="px-5 py-2.5 rounded-2xl text-white bg-red-500 hover:bg-red-600 font-bold shadow-md transition text-sm">Yes, Reset All</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Official Booklet Ordering (#1 to #78)
+        const rawParkList = [
+            { id: 1, num: 1, name: 'Park im. Wisławy Szymborskiej', lat: 50.065417, lng: 19.928972 },
+            { id: 2, num: 2, name: 'Planty Krakowskie', lat: 50.065333, lng: 19.940889 },
+            { id: 3, num: 3, name: 'Park Jalu Kurka', lat: 50.069278, lng: 19.941556 },
+            { id: 4, num: 4, name: 'Bulwary Wisły', lat: 50.052194, lng: 19.933944 },
+            { id: 5, num: 5, name: 'Park Grzegórzecki', lat: 50.055139, lng: 19.965750 },
+            { id: 6, num: 6, name: 'Park Dąbie', lat: 50.056611, lng: 19.979361 },
+            { id: 7, num: 7, name: 'Park Strzelecki', lat: 50.066472, lng: 19.950500 },
+            { id: 8, num: 8, name: 'Park Kolejowy', lat: 50.059750, lng: 19.947667 },
+            { id: 9, num: 9, name: 'Park Ogród nad Sudołem', lat: 50.090611, lng: 19.969194 },
+            { id: 10, num: 10, name: 'Park Rzeczny Białucha', lat: 50.082694, lng: 19.957278 },
+            { id: 11, num: 11, name: 'Park Reduta', lat: 50.096667, lng: 19.987222 },
+            { id: 12, num: 12, name: 'Park Zaczarowanej Dorożki (Stawy Dominikańskie)', lat: 50.087278, lng: 19.966389 },
+            { id: 13, num: 13, name: 'Park im. Stanisława Wyspiańskiego', lat: 50.085861, lng: 19.920722 },
+            { id: 14, num: 14, name: 'Park im. Tadeusza Kościuszki', lat: 50.093444, lng: 19.940222 },
+            { id: 15, num: 15, name: 'Park Krowoderski', lat: 50.089667, lng: 19.922028 },
+            { id: 16, num: 16, name: 'Park Łagiewnicki', lat: 50.023444, lng: 19.944778 },
+            { id: 17, num: 17, name: 'Park Solvay', lat: 50.018250, lng: 19.927917 },
+            { id: 18, num: 18, name: 'Park Rzeczny Wilga', lat: 50.028028, lng: 19.927111 },
+            { id: 19, num: 19, name: 'Park im. Henryka Jordana', lat: 50.060861, lng: 19.917722 },
+            { id: 20, num: 20, name: 'Park Kleparski', lat: 50.076278, lng: 19.937833 },
+            { id: 21, num: 21, name: 'Park Ogród Łobzów', lat: 50.075417, lng: 19.910194 },
+            { id: 22, num: 22, name: 'Park przy ul. Łokietka', lat: 50.080694, lng: 19.927861 },
+            { id: 23, num: 23, name: 'Park Krakowski im. M. Grechuty', lat: 50.067083, lng: 19.924333 },
+            { id: 24, num: 24, name: 'Park św. Wincentego a\'Paulo', lat: 50.071139, lng: 19.911750 },
+            { id: 25, num: 25, name: 'Park przy Forcie Bronowice', lat: 50.081667, lng: 19.900083 },
+            { id: 26, num: 26, name: 'Park przy ul. Radzikowskiego', lat: 50.086833, lng: 19.886972 },
+            { id: 27, num: 27, name: 'Park Rzeczny im. Włodzimierza Tetmajera', lat: 50.094833, lng: 19.865750 },
+            { id: 28, num: 28, name: 'Park Młynówka Królewska', lat: 50.079111, lng: 19.857361 },
+            { id: 29, num: 29, name: 'Błonia Krakowskie', lat: 50.059278, lng: 19.922944 },
+            { id: 30, num: 30, name: 'Park Decjusza', lat: 50.065861, lng: 19.871833 },
+            { id: 31, num: 31, name: 'Park Rzeczny Rudawa', lat: 50.071083, lng: 19.868194 },
+            { id: 32, num: 32, name: 'Park linearny Ruczaj', lat: 50.028306, lng: 19.909889 },
+            { id: 33, num: 33, name: 'Park Dębnicki', lat: 50.049083, lng: 19.916944 },
+            { id: 34, num: 34, name: 'Park Pychowicki', lat: 50.030389, lng: 19.893917 },
+            { id: 35, num: 35, name: 'Park Zakrzówek', lat: 50.033806, lng: 19.908306 },
+            { id: 36, num: 36, name: 'Park Maćka i Doroty', lat: 50.002361, lng: 19.912306 },
+            { id: 37, num: 37, name: 'Park przy Forcie Borek', lat: 50.000806, lng: 19.902611 },
+            { id: 38, num: 38, name: 'Park Duchacki', lat: 50.021639, lng: 19.965167 },
+            { id: 39, num: 39, name: 'Park Kurdwanów', lat: 50.009806, lng: 19.960667 },
+            { id: 40, num: 40, name: 'Park Rzeczny Drwinka', lat: 50.014639, lng: 19.979667 },
+            { id: 41, num: 41, name: 'Park Złocień', lat: 50.029472, lng: 20.031250 },
+            { id: 42, num: 42, name: 'Park im. Anny i Erazma Jerzmanowskich', lat: 50.018000, lng: 19.995111 },
+            { id: 43, num: 43, name: 'Park przy Dworze Czeczów', lat: 50.014361, lng: 20.039694 },
+            { id: 44, num: 44, name: 'Park Rżąka', lat: 50.008306, lng: 20.008083 },
+            { id: 45, num: 45, name: 'Park Aleksandry', lat: 50.011750, lng: 20.013861 },
+            { id: 46, num: 46, name: 'Park Lilli Wenedy', lat: 50.020778, lng: 20.004361 },
+            { id: 47, num: 47, name: 'Park Aleksandry Północ', lat: 50.017694, lng: 20.011806 },
+            { id: 48, num: 48, name: 'Park im. Wojciecha Bednarskiego', lat: 50.041639, lng: 19.950278 },
+            { id: 49, num: 49, name: 'Park Rzeczny Ogród Płaszów', lat: 50.046556, lng: 19.993556 },
+            { id: 50, num: 50, name: 'Park Stacja Wisła', lat: 50.050972, lng: 19.959944 },
+            { id: 51, num: 51, name: 'Park Staw Płaszowski', lat: 50.041194, lng: 19.972583 },
+            { id: 52, num: 52, name: 'Planty im. Floriana Nowackiego', lat: 50.043750, lng: 19.942333 },
+            { id: 53, num: 53, name: 'Park Miejski Bagry Wielkie', lat: 50.034639, lng: 19.990861 },
+            { id: 54, num: 54, name: 'Park Czyżyny', lat: 50.079528, lng: 20.001389 },
+            { id: 55, num: 55, name: 'Park Lotników Polskich', lat: 50.067139, lng: 19.995250 },
+            { id: 56, num: 56, name: 'Park Woźniców', lat: 50.065111, lng: 20.013528 },
+            { id: 57, num: 57, name: 'Park pil. gen. S. Skalskiego', lat: 50.084694, lng: 20.007167 },
+            { id: 58, num: 58, name: 'Fort Batowice', lat: 50.099611, lng: 19.998361 },
+            { id: 59, num: 59, name: 'Park Tysiąclecia', lat: 50.089250, lng: 19.998361 },
+            { id: 60, num: 60, name: 'Planty Mistrzejowickie', lat: 50.095889, lng: 20.007056 },
+            { id: 61, num: 61, name: 'Fort Mistrzejowice', lat: 50.100889, lng: 20.017250 },
+            { id: 62, num: 62, name: 'Park Zalew Nowohucki', lat: 50.079694, lng: 20.053361 },
+            { id: 63, num: 63, name: 'Planty Bieńczyckie', lat: 50.084833, lng: 20.026472 },
+            { id: 64, num: 64, name: 'Park Łuczanowice', lat: 50.108250, lng: 20.113139 },
+            { id: 65, num: 65, name: 'Park Jana Matejki', lat: 50.081306, lng: 20.054333 },
+            { id: 66, num: 66, name: 'Park Wadów', lat: 50.099861, lng: 20.125444 },
+            { id: 67, num: 67, name: 'Park Zielony Jar Wandy', lat: 50.094944, lng: 20.058806 },
+            { id: 68, num: 68, name: 'Park Węgrzynowice', lat: 50.113778, lng: 20.154556 },
+            { id: 69, num: 69, name: 'Park im. Stefana Żeromskiego', lat: 50.066833, lng: 20.042222 },
+            { id: 70, num: 70, name: 'Park Klasztorna', lat: 50.066722, lng: 20.050639 },
+            { id: 71, num: 71, name: 'Park Kultury', lat: 50.071139, lng: 20.033583 },
+            { id: 72, num: 72, name: 'Park Ratuszowy', lat: 50.075500, lng: 20.039306 },
+            { id: 73, num: 73, name: 'Park Szwedzki', lat: 50.074750, lng: 20.044250 },
+            { id: 74, num: 74, name: 'Park Wiśniowy Sad', lat: 50.076278, lng: 20.027056 },
+            { id: 75, num: 75, name: 'Park Przylasek Wyciąski', lat: 50.055889, lng: 20.180667 },
+            { id: 76, num: 76, name: 'Park Przylasek Rusiecki', lat: 50.046389, lng: 20.158278 },
+            { id: 77, num: 77, name: 'Park Fort 2 "Kościuszko" im. prof. Janusza Bogdanowskiego', lat: 50.054194, lng: 19.892861 },
+            { id: 78, num: 78, name: 'Park Kurczaba', lat: 50.012944, lng: 20.005056 }
+        ];
+
+        // Central State Management
+        const state = {
+            checked: new Set(),
+            customParks: [],
+            filter: 'all'
+        };
+
+        let map;
+        let markers = {};
+        let userMarker = null;
+
+        // Double-Layer Storage Configuration
+        const STORAGE_KEY = 'krakow_parks_checked_ids_v3';
+        const CUSTOM_PARKS_KEY = 'krakow_parks_custom_v3';
+        const COOKIE_KEY = 'krakow_parks_checked_ids_cookie_v3';
+
+        function setCookie(name, value) {
+            try {
+                // 10 years expiration = 315360000 seconds
+                document.cookie = `${name}=${encodeURIComponent(value)};Max-Age=315360000;SameSite=Lax;Path=/`;
+            } catch(e) { console.error('Cookie Set Error', e); }
+        }
+
+        function getCookie(name) {
+            try {
+                const nameEQ = name + "=";
+                const ca = document.cookie.split(';');
+                for (let i = 0; i < ca.length; i++) {
+                    let c = ca[i].trim();
+                    if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length, c.length));
+                }
+            } catch(e) { console.error('Cookie Get Error', e); }
+            return null;
+        }
+
+        // Robust Multi-Layer Fallback Loader
+        function loadSavedState() {
+            let loadedIds = null;
+
+            // 1. Try LocalStorage
+            try {
+                const localData = localStorage.getItem(STORAGE_KEY);
+                if (localData) loadedIds = JSON.parse(localData);
+            } catch(e) {}
+
+            // 2. Fallback to Cookie
+            if (!loadedIds || !Array.isArray(loadedIds)) {
+                try {
+                    const cookieData = getCookie(COOKIE_KEY);
+                    if (cookieData) loadedIds = JSON.parse(cookieData);
+                } catch(e) {}
+            }
+
+            // Populate state.checked Set
+            state.checked.clear();
+            if (Array.isArray(loadedIds)) {
+                loadedIds.forEach(id => state.checked.add(Number(id)));
+            }
+
+            // Load Custom Parks
+            try {
+                const customData = localStorage.getItem(CUSTOM_PARKS_KEY);
+                if (customData) state.customParks = JSON.parse(customData);
+            } catch(e) { state.customParks = []; }
+        }
+
+        // Direct Double-Layer Saver
+        function saveState() {
+            const arr = Array.from(state.checked);
+            const jsonStr = JSON.stringify(arr);
+
+            // Save checked IDs to LocalStorage & Persistent 10-Year Cookie
+            try { localStorage.setItem(STORAGE_KEY, jsonStr); } catch(e) {}
+            setCookie(COOKIE_KEY, jsonStr);
+
+            // Save custom parks
+            try { localStorage.setItem(CUSTOM_PARKS_KEY, JSON.stringify(state.customParks)); } catch(e) {}
+        }
+
+        function getAllParks() {
+            return [...rawParkList, ...state.customParks];
+        }
+
+        // Leaflet Markers with Official Booklet Number Badges
+        const createMarkerIcon = (num, visited) => {
+            const statusClass = visited ? 'visited' : 'unvisited';
+            const htmlBadge = `<div class="leaflet-marker-number-badge ${statusClass}">#${num}</div>`;
+            
+            return L.divIcon({
+                html: htmlBadge,
+                className: 'custom-number-marker',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+                popupAnchor: [0, -16]
+            });
+        };
+
+        // App Initialization
+        function initApp() {
+            loadSavedState();
+            initMap();
+            syncUI();
+            setupEventListeners();
+        }
+
+        // Leaflet Map Initialization
+        function initMap() {
+            map = L.map('map', { zoomControl: false }).setView([50.0614, 19.9365], 12);
+            L.control.zoom({ position: 'topleft' }).addTo(map);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap',
+                maxZoom: 18
+            }).addTo(map);
+
+            updateMapMarkers();
+        }
+
+        // Synchronize all UI Elements at once
+        function syncUI() {
+            renderParks();
+            updateStats();
+            updateMapMarkers();
+        }
+
+        // Update Map Markers
+        function updateMapMarkers() {
+            Object.values(markers).forEach(marker => map.removeLayer(marker));
+            markers = {};
+
+            const allParks = getAllParks();
+
+            allParks.forEach(park => {
+                const isVisited = state.checked.has(park.id);
+
+                if (state.filter === 'visited' && !isVisited) return;
+                if (state.filter === 'unvisited' && isVisited) return;
+
+                const marker = L.marker([park.lat, park.lng], {
+                    icon: createMarkerIcon(park.num, isVisited)
+                }).addTo(map);
+
+                const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${park.lat},${park.lng}`;
+
+                const popupContent = `
+                    <div class="p-1 font-sans">
+                        <div class="inline-block text-[10px] font-extrabold bg-slate-900 text-white px-2 py-0.5 rounded-md mb-1">
+                            Park #${park.num}
+                        </div>
+                        <h4 class="font-bold text-slate-900 text-sm mb-1">${park.name}</h4>
+                        <div class="text-[11px] text-slate-500 mb-3 font-mono">
+                            ${park.lat.toFixed(4)}, ${park.lng.toFixed(4)}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="toggleParkStatus(${park.id})" class="text-xs ${isVisited ? 'bg-slate-200 text-slate-700' : 'bg-brand-600 text-white'} font-bold px-3 py-2 rounded-xl transition flex-1 text-center shadow-sm active:scale-95">
+                                ${isVisited ? '<i class="fa-solid fa-rotate-left mr-1"></i> Unstamp' : '<i class="fa-solid fa-stamp mr-1"></i> Add Stamp'}
+                            </button>
+                            <a href="${googleMapsUrl}" target="_blank" rel="noopener" class="text-xs bg-blue-50 text-blue-600 p-2.5 rounded-xl font-bold transition flex items-center justify-center active:scale-95" title="Open Google Maps">
+                                <i class="fa-solid fa-diamond-turn-right text-sm"></i>
+                            </a>
+                        </div>
+                    </div>
+                `;
+
+                marker.bindPopup(popupContent);
+                markers[park.id] = marker;
+            });
+        }
+
+        // Render List Items
+        function renderParks() {
+            const listEl = document.getElementById('parkList');
+            const searchVal = document.getElementById('searchInput').value.toLowerCase().trim();
+            const sortVal = document.getElementById('sortSelect').value;
+
+            listEl.innerHTML = '';
+            const allParks = getAllParks();
+
+            let filteredParks = allParks.filter(park => {
+                const isVisited = state.checked.has(park.id);
+                const matchesFilter = state.filter === 'all' || 
+                                     (state.filter === 'visited' && isVisited) ||
+                                     (state.filter === 'unvisited' && !isVisited);
+                
+                const searchNumMatch = park.num.toString() === searchVal || `#${park.num}` === searchVal;
+                const searchNameMatch = park.name.toLowerCase().includes(searchVal);
+                
+                return matchesFilter && (searchNumMatch || searchNameMatch);
+            });
+
+            filteredParks.sort((a, b) => {
+                if (sortVal === 'num-asc') return a.num - b.num;
+                if (sortVal === 'num-desc') return b.num - a.num;
+                if (sortVal === 'name-asc') return a.name.localeCompare(b.name, 'pl');
+                return 0;
+            });
+
+            if (filteredParks.length === 0) {
+                listEl.innerHTML = `
+                    <div class="text-center py-12 px-4 text-slate-400">
+                        <i class="fa-solid fa-tree-city text-4xl mb-3 opacity-30"></i>
+                        <p class="text-xs font-semibold">No parks found matching your search.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            filteredParks.forEach(park => {
+                const isVisited = state.checked.has(park.id);
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-2xl border transition-all duration-150 flex items-center justify-between gap-2.5 ${
+                    isVisited 
+                        ? 'bg-brand-50/60 border-brand-200' 
+                        : 'bg-white border-slate-200/80 shadow-sm'
+                }`;
+
+                const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${park.lat},${park.lng}`;
+
+                card.innerHTML = `
+                    <div class="flex items-center space-x-3 min-w-0 flex-1 cursor-pointer" onclick="focusPark(${park.id}, ${park.lat}, ${park.lng})">
+                        <button onclick="event.stopPropagation(); toggleParkStatus(${park.id})" 
+                            class="min-w-[44px] min-h-[44px] rounded-2xl flex items-center justify-center transition active:scale-90 flex-shrink-0 ${
+                                isVisited 
+                                    ? 'bg-brand-500 text-white shadow-md shadow-brand-500/30' 
+                                    : 'bg-slate-100 border border-slate-300 text-slate-300 hover:text-slate-400'
+                            }" title="Toggle stamp status">
+                            <i class="fa-solid fa-stamp text-lg"></i>
+                        </button>
+
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-1.5 mb-0.5">
+                                <span class="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md ${isVisited ? 'bg-brand-600 text-white' : 'bg-slate-800 text-white'}">
+                                    #${park.num}
+                                </span>
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-md ${isVisited ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-500'}">
+                                    ${isVisited ? 'Stamped' : 'To Visit'}
+                                </span>
+                            </div>
+                            <h3 class="font-bold text-slate-800 text-xs sm:text-sm leading-tight truncate ${isVisited ? 'line-through text-slate-400 font-medium' : ''}">${park.name}</h3>
+                        </div>
+                    </div>
+
+                    <a href="${googleMapsUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation();" 
+                        class="min-w-[40px] min-h-[40px] bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl flex items-center justify-center transition active:scale-90 flex-shrink-0" title="Open in Google Maps">
+                        <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+                    </a>
+                `;
+
+                listEl.appendChild(card);
+            });
+        }
+
+        // Mutate state.checked Directly & Sync State Globally
+        window.toggleParkStatus = function(id) {
+            const numericId = Number(id);
+            if (state.checked.has(numericId)) {
+                state.checked.delete(numericId);
+            } else {
+                state.checked.add(numericId);
+            }
+            saveState();
+            syncUI();
+
+            if (markers[numericId] && markers[numericId].isPopupOpen()) {
+                markers[numericId].closePopup();
+                markers[numericId].openPopup();
+            }
+        };
+
+        // Focus Map Marker & Switch Tab
+        window.focusPark = function(id, lat, lng) {
+            switchToMap();
+            map.flyTo([lat, lng], 15, { duration: 0.8 });
+            if (markers[id]) {
+                setTimeout(() => markers[id].openPopup(), 800);
+            }
+        };
+
+        // Update Progress Counters
+        function updateStats() {
+            const allParks = getAllParks();
+            const total = allParks.length;
+            let visitedCount = 0;
+
+            allParks.forEach(p => {
+                if (state.checked.has(p.id)) visitedCount++;
+            });
+
+            const unvisitedCount = total - visitedCount;
+            const percent = total === 0 ? 0 : Math.round((visitedCount / total) * 100);
+
+            document.getElementById('progressText').innerText = `${visitedCount} of ${total} Stamps Collected`;
+            document.getElementById('progressPercent').innerText = `${percent}%`;
+            document.getElementById('progressBar').style.width = `${percent}%`;
+
+            document.getElementById('cntAll').innerText = total;
+            document.getElementById('cntVisited').innerText = visitedCount;
+            document.getElementById('cntUnvisited').innerText = unvisitedCount;
+        }
+
+        // Tab Switching for Mobile
+        function switchToList() {
+            document.getElementById('listPanel').classList.remove('hidden');
+            document.getElementById('mapPanel').classList.add('hidden', 'md:block');
+
+            document.getElementById('tabListBtn').className = 'flex flex-col items-center justify-center space-y-0.5 text-brand-600 font-bold transition active:scale-95';
+            document.getElementById('tabMapBtn').className = 'flex flex-col items-center justify-center space-y-0.5 text-slate-400 font-medium hover:text-slate-700 transition active:scale-95';
+        }
+
+        function switchToMap() {
+            document.getElementById('listPanel').classList.add('hidden', 'md:flex');
+            document.getElementById('mapPanel').classList.remove('hidden');
+
+            document.getElementById('tabMapBtn').className = 'flex flex-col items-center justify-center space-y-0.5 text-brand-600 font-bold transition active:scale-95';
+            document.getElementById('tabListBtn').className = 'flex flex-col items-center justify-center space-y-0.5 text-slate-400 font-medium hover:text-slate-700 transition active:scale-95';
+            
+            setTimeout(() => map.invalidateSize(), 200);
+        }
+
+        // Event Listeners Setup
+        function setupEventListeners() {
+            document.getElementById('tabListBtn').addEventListener('click', switchToList);
+            document.getElementById('tabMapBtn').addEventListener('click', switchToMap);
+
+            const searchInput = document.getElementById('searchInput');
+            const clearSearchBtn = document.getElementById('clearSearchBtn');
+            const sortSelect = document.getElementById('sortSelect');
+
+            searchInput.addEventListener('input', () => {
+                clearSearchBtn.classList.toggle('hidden', searchInput.value.length === 0);
+                renderParks();
+            });
+
+            clearSearchBtn.addEventListener('click', () => {
+                searchInput.value = '';
+                clearSearchBtn.classList.add('hidden');
+                renderParks();
+            });
+
+            sortSelect.addEventListener('change', () => {
+                renderParks();
+            });
+
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.filter-btn').forEach(b => {
+                        b.classList.remove('active', 'bg-white', 'text-brand-800', 'shadow-sm');
+                    });
+                    
+                    const clicked = e.currentTarget;
+                    clicked.classList.add('active', 'bg-white', 'text-brand-800', 'shadow-sm');
+                    state.filter = clicked.dataset.filter;
+                    syncUI();
+                });
+            });
+
+            document.getElementById('locateBtn').addEventListener('click', () => {
+                if ('geolocation' in navigator) {
+                    navigator.geolocation.getCurrentPosition(pos => {
+                        const { latitude, longitude } = pos.coords;
+                        if (userMarker) map.removeLayer(userMarker);
+                        
+                        userMarker = L.circleMarker([latitude, longitude], {
+                            radius: 8,
+                            fillColor: '#3b82f6',
+                            color: '#ffffff',
+                            weight: 3,
+                            opacity: 1,
+                            fillOpacity: 0.9
+                        }).addTo(map).bindPopup('Your Current Location').openPopup();
+
+                        map.flyTo([latitude, longitude], 14);
+                    }, () => {
+                        alert('Unable to fetch your GPS location.');
+                    });
+                }
+            });
+
+            // const addModal = document.getElementById('addModal');
+            // document.getElementById('addParkBtn').addEventListener('click', () => addModal.classList.remove('hidden'));
+            // document.getElementById('closeModalBtn').addEventListener('click', () => addModal.classList.add('hidden'));
+            // document.getElementById('cancelModalBtn').addEventListener('click', () => addModal.classList.add('hidden'));
+
+            const moreMenuModal = document.getElementById('moreMenuModal');
+            document.getElementById('moreMenuBtn').addEventListener('click', () => moreMenuModal.classList.remove('hidden'));
+            document.getElementById('closeMoreMenuBtn').addEventListener('click', () => moreMenuModal.classList.add('hidden'));
+
+            const confirmModal = document.getElementById('confirmModal');
+            document.getElementById('triggerResetBtn').addEventListener('click', () => {
+                moreMenuModal.classList.add('hidden');
+                confirmModal.classList.remove('hidden');
+            });
+            document.getElementById('cancelResetBtn').addEventListener('click', () => confirmModal.classList.add('hidden'));
+            document.getElementById('confirmResetBtn').addEventListener('click', () => {
+                state.checked.clear();
+                saveState();
+                syncUI();
+                confirmModal.classList.add('hidden');
+            });
+
+            // Export Backup
+            document.getElementById('exportBtn').addEventListener('click', () => {
+                const checkedIds = Array.from(state.checked);
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(checkedIds, null, 2));
+                const downloadAnchor = document.createElement('a');
+                downloadAnchor.setAttribute("href", dataStr);
+                downloadAnchor.setAttribute("download", `krakow_parks_stamps.json`);
+                document.body.appendChild(downloadAnchor);
+                downloadAnchor.click();
+                downloadAnchor.remove();
+            });
+
+            // Import Backup
+            document.getElementById('importFileInput').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const importedArray = JSON.parse(event.target.result);
+                        if (Array.isArray(importedArray)) {
+                            state.checked.clear();
+                            importedArray.forEach(id => state.checked.add(Number(id)));
+                            saveState();
+                            syncUI();
+                            moreMenuModal.classList.add('hidden');
+                        }
+                    } catch(err) {
+                        alert('Invalid JSON backup file format.');
+                    }
+                };
+                reader.readAsText(file);
+            });
+
+            // Add Custom Park
+            // document.getElementById('addParkForm').addEventListener('submit', (e) => {
+            //     e.preventDefault();
+            //     const name = document.getElementById('newParkName').value.trim();
+            //     const lat = parseFloat(document.getElementById('newParkLat').value);
+            //     const lng = parseFloat(document.getElementById('newParkLng').value);
+
+            //     if (name && !isNaN(lat) && !isNaN(lng)) {
+            //         const newNum = getAllParks().length + 1;
+            //         const newPark = { id: Date.now(), num: newNum, name, lat, lng };
+            //         state.customParks.push(newPark);
+            //         saveState();
+            //         syncUI();
+            //         document.getElementById('addParkForm').reset();
+            //         addModal.classList.add('hidden');
+            //         focusPark(newPark.id, lat, lng);
+            //     }
+            // });
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
